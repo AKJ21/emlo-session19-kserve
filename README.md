@@ -1,56 +1,24 @@
 # Deployment of the SDXL model on AWS using Kserve
 
-Provide the text sentence as an input to the model and it will generate the artificial images
+Provide the text sentence as an input to the model and it will generate the artificial images.
 
 ![Python](https://img.shields.io/badge/python-3.9-blue)
 ![torch](https://img.shields.io/badge/torch-1.12.0-orange)
 ![transformers](https://img.shields.io/badge/transformers-4.30.2-orange)
-![pillow](https://img.shields.io/badge/pillow-9.5.0-orange)
-![fastapi[all]](https://img.shields.io/badge/fastapi[all]-0.98.0-green)
-
-
-## Topics
-```
-1. Write instructions to create the .mar file
-2. Create the s3 bucket on aws and push the mar file into it
-2. Deploy the SDXL model on KServe
-```
+![SDXL](https://img.shields.io/badge/sdxl-1.0-orange)
+![Kserve](https://img.shields.io/badge/KServe-0.11.1-green)
+![S3](https://img.shields.io/badge/S3-aws-green)
 
 ## 1. AWS Setup 
- - Create the EKS cluster on AWS, Create eks-config.yaml file.
+ - Spin up the EKS cluster on AWS, Create eks-config.yaml file. Run command:
     ```
     eksctl create cluster -f eks-config.yaml
     ```
-
-- Enable OIDC for your cluster: 
+ - Enable OIDC for your cluster: 
     ```
     eksctl utils associate-iam-oidc-provider --region ap-south-1 --cluster basic-cluster --approve
     ```
-- Create a storage bucket on AWS with name **emlo-sess19**.
-
-- Build and create policy for S3
-    
-- Create iam-s3-test-policy.json file.    
-    ```
-    aws iam create-policy --policy-name S3ListTest --policy-document file://iam-s3-test-policy.json
-    ```
-
-- Create IRSA (IAM Roles for Service Accounts)
-    ```
-    eksctl create iamserviceaccount \ 
-        --name s3-list-sa \  
-        --cluster basic-cluster \  
-        --attach-policy-arn arn:aws:iam::ACCOUNT_ID:policy/S3ListTest \  
-        --approve \  
-        --region ap-south-1
-    ```
-    Note: Change arn policy name with yours wherever required.
-
-- Create aws cli pod
-    ```
-    `k apply -f aws-cli-pod.yaml`
-    ```
-- Create the IRSA for EBS
+ - Create the IRSA for EBS on EKS
     ```
     eksctl create iamserviceaccount \  
     --name ebs-csi-controller-sa \  
@@ -62,16 +30,17 @@ Provide the text sentence as an input to the model and it will generate the arti
     --approve \  
     --region ap-south-1
     ```
-- Create the EBS CSI Driver Addon
+ - Create the EBS CSI Driver Addon
     ```
     eksctl create addon --name aws-ebs-csi-driver --cluster basic-cluster --service-account-role-arn arn:aws:iam::<YOUR_ACCOUNT_ID>:role/AmazonEKS_EBS_CSI_DriverRole --region ap-south-1 --force
     ```
-- (Optional) If an instance added later-on to eks configuration.
+ - (Optional) If an instance added later-on to eks configuration.
     ```
     `eksctl create nodegroup --config-file=eks-config.yaml`
     ```
-## 2 Istio Installation on EKS Cluster
-- Install instio using helm and create the namespace
+
+## 2. Istio Installation on EKS Cluster
+ - Install instio using helm and create the namespace
     ```
     helm repo add istio https://istio-release.storage.googleapis.com/charts
 
@@ -84,7 +53,7 @@ Provide the text sentence as an input to the model and it will generate the arti
     kubectl create namespace istio-ingress
     ```
 
-- Install istio ingress gateway:
+ - Install istio ingress gateway:
     ```
     helm install istio-ingress istio/gateway -n istio-ingress \
         --set "labels.istio=ingressgateway" \
@@ -93,32 +62,32 @@ Provide the text sentence as an input to the model and it will generate the arti
         --set service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-attributes"="load_balancing.cross_zone.enabled=true" \
         --wait
     ```
-## 3.Install Addon:
--   Matric servers Addons
+## 3.Install Addons:
+ -  Metric servers addons
     ```
     kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
     ```
--  ADDON in kiali jaeger prometheus grafana
+ -  ADDONS for kiali jaeger prometheus grafana
     ```
+    for ADDON in kiali jaeger prometheus grafana
     do
         ADDON_URL="https://raw.githubusercontent.com/istio/istio/release-1.18/samples/addons/$ADDON.yaml"
         kubectl apply -f $ADDON_URL
     done
     ```
-
-- Enable SideCar Injection:
+ -  Enable SideCar Injection:
     ```
     kubectl label namespace default istio-injection=enabled
     ```
-- Install the Gateway CRDs:
+ -  Install the Gateway CRDs:
     ```
-    kubectl get crd gateways.gateway.networking.k8s.io &> /dev/null || \
-        { kubectl kustomize "github.com/kubernetes-sigs/gateway-api/config/crd?ref=v0.8.0" | kubectl apply -f -; }
+    kubectl get crd gateways.gateway.networking.k8s.io &> /dev/null || { kubectl kustomize "github.com/kubernetes-sigs/gateway-api/config/crd?ref=v0.8.0" | kubectl apply -f -; }
     ```
-## 4. Test if istio is working
 
-- We can hit the bookinfo endpoint: 
+## 4. (Optional) Test if istio is working
+
+ -  We can hit the bookinfo endpoint: 
     ```
     k apply -f https://raw.githubusercontent.com/istio/istio/release-1.19/samples/bookinfo/platform/kube/bookinfo.yaml
 
@@ -130,80 +99,67 @@ Provide the text sentence as an input to the model and it will generate the arti
     export INGRESS_PORT=$(kubectl get gtw bookinfo-gateway -o jsonpath='{.spec.listeners[?(@.name=="http")].port}')
     export GATEWAY_URL=$INGRESS_HOST:$INGRESS_PORT
 
-    echo $GATEWAY_URL --> this should give url, if empty then check istio
+    echo $GATEWAY_URL ## --> this should give url, if empty then check istio
     ```
-## 5 Install KServe
 
-- Create `istio-kserve-ingress.yaml` file
+## 5. Install KServe
 
+ -  Create `istio-kserve-ingress.yaml` file and run command:
     ``` 
     k apply -f istio-kserve-ingress.yaml
     ```
- - Install Cert Manager
+ -  Install Cert Manager
     ```
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.1/cert-manager.yaml
     ```
-- Install KServe Manifest
+ -  Install KServe Manifest
     ```
     kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
     ```
-- Install KServe Runtime
+ -  Install KServe Runtime
     ```
     kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve-runtimes.yaml
     ```
-- Do patching by running: 
+ -  Do patching by running: 
     ``` 
     kubectl patch configmap/inferenceservice-config -n kserve --type=strategic -p '{"data": {"deploy": "{\"defaultDeploymentMode\": \"RawDeployment\"}"}}'
     ```
 
-## 6 Create S3 bucket for KServe
+## 6. Create S3 bucket for KServe
+-  Create a S3 Bucket on aws where we will store these model .mar files, which will be loaded by KServe: **emlo-sess19**.
 
 - Create IRSA for S3 Read Only Access:
-    ```
-    eksctl create iamserviceaccount \
-        --cluster=basic-cluster \
-        --name=s3-read-only \
-        --attach-policy-arn=arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess \
-        --override-existing-serviceaccounts \
-        --region ap-south-1 \
-        --approve
-    ```
+```
+eksctl create iamserviceaccount --cluster=basic-cluster --name=s3-read-only --attach-policy-arn=arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess --override-existing-serviceaccounts --region ap-south-1 --approve
+```
+- Create S3 Secret file to be used by our Inference Service: **s3-secret.yaml**
 
-- Create S3 Secret to be used by our Inference Service: **s3-secret.yaml**
-    ```
-    k apply -f s3-secret.yaml
-    ```
-- Attach the secret: 
-    ```
-    k patch serviceaccount s3-read-only -p '{"secrets": [{"name": "s3-secret"}]}'
-    ```
+- Run command: `k apply -f s3-secret.yaml`
+
+- Attach the secret: `k patch serviceaccount s3-read-only -p '{"secrets": [{"name": "s3-secret"}]}'`
 
 ## 7. Preparation to deploy SDXL on EKS with KServe
 
-- Create a folder `config` and inside it create `config.properties` file.
-
-- Create `requirement.txt`.
-- Create `sdxl_handler.py` script.
-- Now, start a torchserve docker container to create the model archive file:
+ -  Create a folder `config` and inside it create `config.properties` file.
+ -  Create `requirement.txt`.
+ -  Create `sdxl_handler.py` script.
+ -  Now, start a torchserve docker container to create the model archive file:
     ```
     `docker run -it --rm --shm-size=1g --ulimit memlock=-1 --ulimit stack=67108864 --gpus all --env NVIDIA_DISABLE_REQUIRE=1 -v ${PWD}:/opt/src pytorch/torchserve:0.8.1-gpu bash`
     ```    
-
-- Create MAR from handler and model artifact:  
+ -  Create MAR from handler and model artifact:  
     > `cd /opt/src`
 
     > `torch-model-archiver --model-name sdxl --version 1.0 --handler sdxl_handler.py --extra-files sdxl-1.0-model.zip -r requirements.txt`
 
-- Create a S3 Bucket where we will store these model .mar files, which will be loaded by KServe:
-    
-- upload ./config.properties to s3://<s3 bucket name>/config/config.properties  
-    > `aws s3 cp config.properties s3://emlo-sess19/config/`
+ -  upload config.properties and .mar file to s3 bucket.
+    ```
+    aws s3 cp config.properties s3://emlo-sess19/config/
+    aws s3 cp sdxl.mar s3://emlo-sess19/model-store/
+    ```
+ -  Create `sdxl.yaml` file.
 
-    > `aws s3 cp sdxl.mar s3://emlo-sess19/model-store/`
-
-- Create `sdxl.yaml` file.
-
-- Run to deploy sdxl: `k apply -f sdxl.yaml`
+ -  Run to deploy sdxl: `k apply -f sdxl.yaml`
 
 ## 8. Monitoring the Deployment
 
@@ -233,18 +189,22 @@ Provide the text sentence as an input to the model and it will generate the arti
 
     c. Kiali : `kubectl port-forward svc/kiali 20001:20001 -n istio-system`.
 
-## 9. Test Model:
+## 9. Test SDXL Model:
 
 - Get Ingress host and port:
-> export INGRESS_HOST=$(kubectl -n istio-ingress get service istio-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+```
+export INGRESS_HOST=$(kubectl -n istio-ingress get service istio-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 export INGRESS_PORT=$(kubectl -n istio-ingress get service istio-ingress -o jsonpath='{.spec.ports[?(@.name=="http2")].port}')
-
-> MODEL_NAME=sdxl
+```
+```
+MODEL_NAME=sdxl
 SERVICE_HOSTNAME=$(kubectl get inferenceservice torchserve -o jsonpath='{.status.url}' | cut -d "/" -f 3)
-
-> echo http://${INGRESS_HOST}:${INGRESS_PORT}/v1/models/${MODEL_NAME}:predict
-
+```
+```
+echo http://${INGRESS_HOST}:${INGRESS_PORT}/v1/models/${MODEL_NAME}:predict
+```
 - Take the url from above output and copy+paste it in the test_kserve.py file.
+- Run "Python test_kserve.py"
 
 ## 10. Output Images
 ![Screenshot](Output/AI.jpg)
@@ -281,7 +241,6 @@ kubectl get all -A
 - Promethus
 ![Screenshot](Images/Promethus.JPG)
 
-
 ## Group Members
-- Anurag Mittal
 - Aman Jaipuria
+- Anurag Mittal
