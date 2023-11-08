@@ -213,7 +213,7 @@ echo http://${INGRESS_HOST}:${INGRESS_PORT}/v1/models/${MODEL_NAME}:predict
 ![Screenshot](Output/out.jpg)
 ![Screenshot](Output/USA.jpg)
 
-## 11. Results Monitering
+## 11. Results Monitoring
 ```
 kubectl get pods
 ```
